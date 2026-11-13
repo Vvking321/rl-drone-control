@@ -1,0 +1,4 @@
+# Podstawowe zależności projektu
+numpy
+matplotlib
+gymnasium

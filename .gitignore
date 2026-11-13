@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Sekrety i dane lokalne (nigdy nie commituj)
+.env
+*.key
+*.pem
+secrets*
+
+# Edytory i systemy
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# LaTeX (pliki pomocnicze)
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.lof
+*.lot
+*.bbl
+*.blg
