@@ -2,7 +2,7 @@
 \input{article_style.tex}
 
 \title{Raport projektowy\\Uczenie się ze wzmocnieniem}
-\author{Imię i nazwisko studenta}
+\author{Patryk Dziki}
 \date{2026/2027}
 
 \begin{document}
@@ -17,11 +17,11 @@
 \toprule
 Element & Informacja \\
 \midrule
-Imię i nazwisko & Do uzupełnienia \\
-Numer albumu & Do uzupełnienia \\
-Kierunek/specjalność & Do uzupełnienia \\
-Tytuł projektu & Do uzupełnienia \\
-Link do repozytorium & \url{https://github.com/...} \\
+Imię i nazwisko & Patryk Dziki \\
+Numer albumu & 179480 \\
+Kierunek/specjalność & Informatyka, specjalność: AI \\
+Tytuł projektu & Sterowanie wysokością drona z ograniczoną energią z~wykorzystaniem uczenia się ze wzmocnieniem \\
+Link do repozytorium & \url{https://github.com/vvking321/rl-drone-control} \\
 Data oddania & Do uzupełnienia \\
 \bottomrule
 \end{tabular}
@@ -31,87 +31,118 @@ Data oddania & Do uzupełnienia \\
 
 \subsection{Opis problemu}
 
-Należy krótko opisać problem rozwiązywany w~projekcie.
-Opis powinien być zrozumiały bez czytania kodu źródłowego.
+Projekt dotyczy sterowania pionowym ruchem drona (w jednym wymiarze). Dron ma wznieść się na zadaną wysokość i ją utrzymać, zużywając przy tym jak najmniej energii. Jest on modelowany jako punkt materialny poruszający się w pionie pod wpływem ciągu silników, grawitacji i losowych podmuchów wiatru, a jego bateria jest ograniczona. W kolejnych krokach czasowych sterownik wybiera, czy poziom ciągu ma zostać zmniejszony, utrzymany czy zwiększony.
+
+Problem jest uproszczonym modelem zadania występującego w rzeczywistych dronach. Pozwala przebadać proces uczenia agenta, wpływ konstrukcji funkcji nagrody oraz porównać agenta uczącego się z klasycznym regulatorem.
 
 \subsection{Cel agenta}
 
-Należy wyjaśnić, co agent ma osiągnąć oraz kiedy jego działanie można uznać za poprawne lub skuteczne.
+Agent ma doprowadzić drona na zadaną wysokość i utrzymać go w strefie docelowej, nie doprowadzając do rozbicia, wyjścia poza dopuszczalny zakres wysokości ani rozładowania baterii, i zużywając przy tym jak najmniej energii.
+
+Epizod uznaje się za udany, jeśli zakończył się bez porażki, a dron przebywał w strefie docelowej przez co najmniej 80\% kroków (wartość wstępna).
+
+Sukces projektu będzie oceniany na podstawie: średniego zwrotu z epizodu, odsetka epizodów udanych, zużycia energii, liczby porażek oraz porównania z agentem bazowym (regulator PID i prosta reguła progowa).
 
 \subsection{Uzasadnienie zastosowania uczenia się ze wzmocnieniem}
 
-Należy wyjaśnić, dlaczego problem można rozpatrywać jako problem uczenia się ze wzmocnieniem. W szczególności należy wskazać:
+Problem można rozpatrywać jako problem uczenia się ze wzmocnieniem z następujących powodów:
 \begin{itemize}
-    \item jakie decyzje są podejmowane sekwencyjnie,
-    \item w jaki sposób decyzje wpływają na przyszły stan środowiska,
-    \item dlaczego istotny jest wynik długoterminowy, a nie tylko natychmiastowa nagroda,
-    \item dlaczego zastosowanie agenta uczącego się jest uzasadnione.
+    \item \textbf{Decyzje sekwencyjne:} w każdym kroku czasowym agent wybiera zmianę ciągu, a całe zadanie jest ciągiem takich decyzji.
+    \item \textbf{Wpływ na przyszły stan:} zmiana ciągu wpływa na prędkość, a dopiero potem na wysokość (bezwładność), a ponadto zużywa baterię, co ogranicza możliwości w kolejnych krokach.
+    \item \textbf{Wynik długoterminowy:} agresywne zwiększenie ciągu szybko zbliża drona do celu, ale może prowadzić do przeregulowania i dużego zużycia energii. Dobra strategia musi uwzględniać skumulowany koszt całego epizodu, a nie tylko natychmiastową nagrodę.
+    \item \textbf{Zasadność agenta uczącego się:} agent uczy się strategii wyłącznie z interakcji ze środowiskiem, bez znajomości modelu dynamiki i bez ręcznego strojenia, a jego kompromis między dokładnością a energią wynika z funkcji nagrody. Zakłócenia (wiatr) nie są obserwowane, więc strategia musi działać dobrze w ich obecności.
 \end{itemize}
 
 \section{Formalizacja problemu RL/MDP}
 
 \subsection{Agent i środowisko}
 
-Należy opisać agenta, środowisko oraz sposób ich interakcji. Warto wskazać, co dzieje się w jednym kroku epizodu.
+\textbf{Agent} jest sterownikiem ciągu drona. \textbf{Środowisko} stanowi jednowymiarowy model dynamiki pionowej z zakłóceniem wiatru i modelem zużycia baterii. Dron startuje z losowej wysokości początkowej $z_0 > 0$ (z przedziału, którego granice zostaną ustalone przy implementacji) i zerowej prędkości, a docelowa wysokość wynosi $z_{\mathrm{ref}}$.
+
+Jeden krok epizodu przebiega następująco:
+\begin{enumerate}
+    \item agent obserwuje stan i wybiera akcję $a_t \in \{0, 1, 2\}$,
+    \item środowisko aktualizuje poziom ciągu,
+    \item losowane jest zakłócenie $w_t$, a następnie aktualizowane są prędkość i wysokość,
+    \item aktualizowany jest poziom baterii,
+    \item obliczana jest nagroda $r_t$ i sprawdzane są warunki zakończenia epizodu,
+    \item środowisko zwraca nową obserwację, nagrodę oraz informację o zakończeniu epizodu.
+\end{enumerate}
+
+Dynamika środowiska jest opisana słownie, a dokładne wzory zostaną podane przy implementacji środowiska. W każdym kroku czasowym środowisko zmienia poziom ciągu zgodnie z wybraną akcją, a z ciągu, grawitacji i losowego zakłócenia (podmuchu wiatru) wylicza nową prędkość, a z niej nową wysokość. Poziom baterii maleje proporcjonalnie do użytego ciągu. Błąd wysokości definiujemy jako $e_t = z_t - z_{\mathrm{ref}}$, a $e_{\max}$ oznacza maksymalny dopuszczalny błąd wysokości (wstępnie 5~m).
 
 \subsection{Stan lub obserwacja}
 
-Należy opisać informacje dostępne dla agenta. Jeżeli agent nie obserwuje pełnego stanu środowiska, należy wyjaśnić różnicę między stanem środowiska a obserwacją agenta.
+Pełny stan środowiska obejmuje wysokość, prędkość pionową, ciąg i poziom baterii oraz bieżące zakłócenie $w_t$. Agent \textbf{nie obserwuje zakłócenia $w_t$}, więc jego obserwacja jest niepełna (różni się od stanu środowiska). W wersji tablicowej każda ciągła składowa obserwacji zostaje zdyskretyzowana na skończoną liczbę przedziałów, a rozdzielczość dyskretyzacji będzie przedmiotem eksperymentu.
 
 \begin{center}
 \begin{tabular}{p{0.30\textwidth}p{0.60\textwidth}}
 \toprule
 Składowa stanu/obserwacji & Znaczenie \\
 \midrule
-Do uzupełnienia & Do uzupełnienia \\
-Do uzupełnienia & Do uzupełnienia \\
-Do uzupełnienia & Do uzupełnienia \\
+Błąd wysokości $e_t$ [m] & Różnica między wysokością drona a wysokością docelową ($e_t = z_t - z_{\mathrm{ref}}$); wartość dodatnia oznacza położenie powyżej celu. \\
+Prędkość pionowa $v_t$ [m/s] & Prędkość drona w pionie; wartość dodatnia oznacza ruch w górę. \\
+Poziom baterii $b_t$ & Pozostała energia, znormalizowana do przedziału $[0,1]$. \\
+Poziom ciągu $u_t$ & Aktualny, znormalizowany ciąg silników, $T_t = u_t\,T_{\max}$. \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \subsection{Akcje}
 
-Należy opisać zbiór akcji dostępnych dla agenta.
-Jeżeli niektóre akcje są niedozwolone w~określonych stanach,
-należy to wyjaśnić.
+Agent wybiera jedną z trzech akcji dyskretnych, które zmieniają poziom ciągu o stały krok $\delta_u$. Żadna akcja nie jest zabroniona. Jeżeli akcja miałaby wyprowadzić ciąg poza przedział $[0,1]$, poziom ciągu zostaje obcięty do granicy (akcja nie ma wtedy dodatkowego efektu).
 
 \begin{center}
 \begin{tabular}{p{0.30\textwidth}p{0.60\textwidth}}
 \toprule
 Akcja & Opis \\
 \midrule
-Do uzupełnienia & Do uzupełnienia \\
-Do uzupełnienia & Do uzupełnienia \\
-Do uzupełnienia & Do uzupełnienia \\
+$a=0$: zmniejsz ciąg & $u_{t+1} = \max(0,\ u_t - \delta_u)$ \\
+$a=1$: utrzymaj ciąg & $u_{t+1} = u_t$ \\
+$a=2$: zwiększ ciąg & $u_{t+1} = \min(1,\ u_t + \delta_u)$ \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \subsection{Funkcja nagrody}
 
-Należy dokładnie opisać funkcję nagrody. Opis powinien zawierać nie tylko wzór lub kod, ale również uzasadnienie przyjętych wartości.
-
+Nagroda w kroku $t$ jest sumą czterech składników:
 \begin{equation}
-    r_t = \text{do uzupełnienia}
+    r_t = r_t^{\text{błąd}} + r_t^{\text{energia}} + r_t^{\text{cel}} + r_t^{\text{porażka}},
 \end{equation}
-
-W tej sekcji należy wyjaśnić:
+gdzie:
 \begin{itemize}
-    \item za co agent otrzymuje nagrodę dodatnią,
-    \item za co agent otrzymuje karę,
-    \item czy występuje kara za krok,
-    \item czy występują ograniczenia twarde lub miękkie,
-    \item czy nagroda nie zachęca agenta do niepożądanego zachowania.
+    \item $r_t^{\text{błąd}} = -\alpha_e\,|e_t| / e_{\max}$ --- kara proporcjonalna do odchylenia od wysokości docelowej,
+    \item $r_t^{\text{energia}} = -\alpha_u\,u_t$ --- kara proporcjonalna do użytego ciągu (koszt energii),
+    \item $r_t^{\text{cel}} = r_{\mathrm{cel}}$, jeśli $|e_t| \le \varepsilon_e$ i $|v_t| \le \varepsilon_v$, a w przeciwnym razie $0$ --- bonus za utrzymanie wysokości,
+    \item $r_t^{\text{porażka}} = -R_{\mathrm{fail}}$ w kroku, w którym epizod kończy się porażką, a w przeciwnym razie $0$.
 \end{itemize}
+W definicji nagrody wielkości $e_t$, $v_t$ i $u_t$ odnoszą się do stanu po wykonaniu kroku (kolejność operacji opisano w podrozdziale „Agent i środowisko"). Wstępne wartości parametrów: $\alpha_e = 1$, $\alpha_u = 0{,}1$, $r_{\mathrm{cel}} = 1$, $R_{\mathrm{fail}} = 100$, $\varepsilon_e = 0{,}1$~m, $\varepsilon_v = 0{,}2$~m/s. Zostaną one skorygowane po pierwszych testach.
 
 \subsection{Warunki zakończenia epizodu}
 
-Należy wskazać wszystkie sytuacje, w których epizod zostaje zakończony, np. osiągnięcie celu, kolizja, wyczerpanie energii, przekroczenie limitu kroków albo wejście w stan porażki.
+Epizod kończy się (dla stanu po wykonaniu kroku), gdy:
+\begin{itemize}
+    \item $z_t \le 0$ (rozbicie drona o ziemię) --- porażka,
+    \item $|e_t| > e_{\max}$ (wyjście poza dopuszczalny zakres wysokości) --- porażka,
+    \item $b_t \le 0$ (wyczerpanie baterii) --- porażka,
+    \item osiągnięto limit $N_{\max}$ kroków (wstępnie 400, czyli 20~s przy $\Delta t = 0{,}05$~s) --- koniec neutralny.
+\end{itemize}
 
 \subsection{Założenia i ograniczenia środowiska}
 
-Należy opisać uproszczenia przyjęte w projekcie, ograniczenia modelu środowiska oraz elementy, które nie zostały uwzględnione.
+Przyjęto następujące uproszczenia:
+\begin{itemize}
+    \item ruch tylko w pionie (jeden wymiar), bez orientacji, obrotów i ruchu poziomego,
+    \item dron jako punkt materialny o stałej masie, bez aerodynamiki i efektu przyziemienia,
+    \item ciąg zmienia się natychmiast po wyborze akcji (brak opóźnienia silników),
+    \item prosty model wiatru jako losowego zakłócenia przyspieszenia oraz liniowy model zużycia baterii,
+    \item akcje dyskretne o stałym kroku zmiany ciągu.
+\end{itemize}
+
+Model nie odwzorowuje rzeczywistego drona, więc wyniki nie dowodzą skuteczności sterowania na prawdziwym sprzęcie.
+
+Elementy formalizacji, które mogą jeszcze wymagać korekty po pierwszych testach: wartości parametrów fizycznych, składniki i wagi funkcji nagrody, rozdzielczość dyskretyzacji obserwacji, krok zmiany ciągu $\delta_u$, definicja udanego epizodu oraz limit kroków.
 
 \section{Implementacja}
 
